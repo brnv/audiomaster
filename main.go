@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -16,11 +18,12 @@ var (
 const usage = `audiomaster
 
 Usage:
-    audiomaster --file <string> [options]
+    audiomaster --file <path> [options]
     audiomaster -h | --help
 
 Options:
-    --file <string>   Email.
+    --file <path>     File to master.
+    --output <path>   Output file [default: ./mastered.mp3].
     --debug           Enable debug output.
     --trace           Enable trace output.
     -h --help         Show this help.
@@ -40,8 +43,10 @@ func main() {
 	}
 
 	path := args["--file"].(string)
+	masteredDestination := args["--output"].(string)
 
 	logger.Debugf("filepath: %s", path)
+	logger.Debugf("mastered file destination: %s", masteredDestination)
 
 	file, err := os.Open(path)
 	if err != nil {
@@ -76,9 +81,35 @@ func main() {
 		logger.Infof("progress: %d%%", progress)
 
 		if progress == 100 || checkResult.Status.Mastered {
-			logger.Infof("original file: %s", checkResult.Actions.OriginalFile)
-			logger.Infof("mastered file: %s", checkResult.Actions.MasteredFile)
+			err = download(masteredDestination, checkResult.Actions.MasteredFile)
+			if err != nil {
+				logger.Fatal(err)
+			}
+
+			logger.Infof("saved to %s", masteredDestination)
+
 			break
 		}
 	}
+}
+
+func download(filepath string, url string) error {
+	response, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+
+	destination, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer destination.Close()
+
+	_, err = io.Copy(destination, response.Body)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
